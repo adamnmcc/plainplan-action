@@ -16,10 +16,11 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write        # free tier (public repos): proves repo is public via OIDC
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -39,7 +40,7 @@ jobs:
         uses: adamnmcc/plainplan-action@v1
         with:
           plan_file: plan.json
-          api_key: ${{ secrets.PLAINPLAN_API_KEY }}
+          # Public repos: no api_key needed (free tier via OIDC above).
+          # Private repos or higher limits: uncomment and set a key.
+          # api_key: ${{ secrets.PLAINPLAN_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          # Optional: customize the API endpoint (e.g., for self-hosted)
-          # api_url: 'https://your-api.example.com/api/analyze'
