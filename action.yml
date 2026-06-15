@@ -13,13 +13,28 @@ inputs:
     default: 'plan.json'
 
   api_key:
-    description: 'PlainPlan API key. Get one at https://plainplan.click'
-    required: true
+    description: >-
+      PlainPlan API key (https://plainplan.click). Optional: if omitted, the
+      action uses the free tier for PUBLIC repos via GitHub OIDC — which
+      requires `permissions: id-token: write` on the job. Private repos must
+      set an api_key.
+    required: false
+    default: ''
 
   api_url:
-    description: 'PlainPlan API endpoint URL. Defaults to production.'
+    description: 'PlainPlan API endpoint URL (API-key mode). Defaults to production.'
     required: false
     default: 'https://api.plainplan.click/api/analyze'
+
+  free_api_url:
+    description: 'PlainPlan free-tier (OIDC) endpoint URL. Defaults to production.'
+    required: false
+    default: 'https://api.plainplan.click/api/free/analyze'
+
+  oidc_audience:
+    description: 'Audience claim requested for the GitHub OIDC token (free tier).'
+    required: false
+    default: 'plainplan'
 
   github_token:
     description: 'GitHub token for posting PR comments.'
@@ -64,14 +79,34 @@ runs:
     - name: Analyze Terraform plan
       id: analyze
       shell: bash
+      env:
+        PLAINPLAN_API_KEY: ${{ inputs.api_key }}
       run: |
-        echo "🔍 Sending plan to PlainPlan..."
-        API_URL="${{ inputs.api_url }}?include=pr_markdown"
+        if [ -n "${PLAINPLAN_API_KEY:-}" ]; then
+          echo "🔍 Sending plan to PlainPlan (API key)..."
+          ENDPOINT="${{ inputs.api_url }}?include=pr_markdown"
+          AUTH_HEADER=(-H "Authorization: Bearer $PLAINPLAN_API_KEY")
+        else
+          echo "🔍 No API key set — using the free tier for public repositories (GitHub OIDC)..."
+          if [ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ] || [ -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]; then
+            echo "::error::Free tier requires an OIDC token. Add 'permissions: id-token: write' to the job, or provide an api_key."
+            exit 1
+          fi
+          OIDC_TOKEN=$(curl -s --max-time 15 \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=${{ inputs.oidc_audience }}" | jq -r '.value // empty')
+          if [ -z "$OIDC_TOKEN" ]; then
+            echo "::error::Could not obtain a GitHub OIDC token (is 'id-token: write' granted?)."
+            exit 1
+          fi
+          ENDPOINT="${{ inputs.free_api_url }}?include=pr_markdown"
+          AUTH_HEADER=(-H "X-GitHub-OIDC: $OIDC_TOKEN")
+        fi
         HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
           --max-time 60 \
           --connect-timeout 15 \
-          -X POST "$API_URL" \
-          -H "Authorization: Bearer ${{ inputs.api_key }}" \
+          -X POST "$ENDPOINT" \
+          "${AUTH_HEADER[@]}" \
           -H "Content-Type: application/json" \
           -d @"${{ inputs.plan_file }}" 2>&1) || {
             echo "::error::curl failed — API unreachable or timed out after 60s"
@@ -87,7 +122,7 @@ runs:
         PR_MARKDOWN=$(echo "$HTTP_BODY" | jq -r '.analysis.pr_markdown // empty')
         SUMMARY=$(echo "$HTTP_BODY" | jq -r '.analysis.summary // empty')
         RISK_LEVEL=$(echo "$HTTP_BODY" | jq -r '.metadata.max_risk_level // "NONE"' 2>/dev/null || echo "NONE")
-        COMMENT_FILE="$RUNNER_TEMP/planplain-comment.md"
+        COMMENT_FILE="$RUNNER_TEMP/plainplan-comment.md"
         echo "$PR_MARKDOWN" > "$COMMENT_FILE"
         echo "comment_file=$COMMENT_FILE" >> $GITHUB_OUTPUT
         echo "summary<<EOF" >> $GITHUB_OUTPUT

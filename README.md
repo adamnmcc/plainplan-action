@@ -6,6 +6,29 @@ The API now returns `analysis.summary` by default. Richer fields like `pr_markdo
 
 ## Usage
 
+### Free tier — public repositories (no API key)
+
+Public repos can use PlainPlan for free. Instead of an API key, the action
+proves your repo is public with a GitHub OIDC token, so the job needs
+`id-token: write`:
+
+```yaml
+jobs:
+  plan-review:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write      # required for the free tier
+      pull-requests: write # required to post the comment
+    steps:
+      - uses: actions/checkout@v5
+      - name: Analyze with PlainPlan
+        uses: adamnmcc/plainplan-action@v1
+        with:
+          plan_file: plan.json
+```
+
+### API key — private repos or higher limits
+
 ```yaml
 - name: Analyze with PlainPlan
   uses: adamnmcc/plainplan-action@v1
@@ -14,6 +37,9 @@ The API now returns `analysis.summary` by default. Richer fields like `pr_markdo
     api_key: ${{ secrets.PLAINPLAN_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+Get a key at https://plainplan.click. Private repositories require an API key
+(the free tier is public-repos only).
 
 Generate `plan.json` first:
 
@@ -30,8 +56,10 @@ Generate `plan.json` first:
 ## Inputs
 
 - `plan_file` (optional): Path to Terraform/OpenTofu plan JSON file. Default: `plan.json`
-- `api_key` (required): PlainPlan API key from https://plainplan.click
-- `api_url` (optional): API endpoint override. Default: `https://api.plainplan.click/api/analyze`
+- `api_key` (optional): PlainPlan API key from https://plainplan.click. Omit to use the free tier for public repos (requires `id-token: write`). Required for private repos.
+- `api_url` (optional): API-key endpoint override. Default: `https://api.plainplan.click/api/analyze`
+- `free_api_url` (optional): Free-tier (OIDC) endpoint override. Default: `https://api.plainplan.click/api/free/analyze`
+- `oidc_audience` (optional): Audience for the requested OIDC token. Default: `plainplan`
 - `github_token` (optional): Token used to post PR comments. Default: `${{ github.token }}`
 - `post_comment` (optional): `true` or `false`. Default: `true`
 
