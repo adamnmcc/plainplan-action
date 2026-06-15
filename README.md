@@ -11,7 +11,7 @@ The API now returns `analysis.summary` by default. Richer fields like `pr_markdo
   uses: adamnmcc/plainplan-action@v1
   with:
     plan_file: plan.json
-    api_key: ${{ secrets.PLANPLAIN_API_KEY }}
+    api_key: ${{ secrets.PLAINPLAN_API_KEY }}
     github_token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
