@@ -46,6 +46,15 @@ inputs:
     required: false
     default: 'true'
 
+  fail_on_risk:
+    description: >-
+      Risk threshold that fails the run and sets the `plainplan` commit status to
+      failure: one of none | LOW | MED | HIGH. `none` (default) never fails and is
+      fully backward-compatible. Add the `plainplan` status to your branch
+      protection required checks to gate merges. Requires `statuses: write`.
+    required: false
+    default: 'none'
+
 outputs:
   summary:
     description: 'Plain-English summary of the Terraform plan'
@@ -148,3 +157,44 @@ runs:
         gh pr comment "${{ github.event.pull_request.number }}" \
           --body "$(cat "${{ steps.analyze.outputs.comment_file }}")"
         echo "✅ Analysis posted as PR comment"
+
+    - name: Risk gate
+      # Runs even if the comment step was skipped, so the `plainplan` commit
+      # status is always reported. Requires `statuses: write`.
+      if: always() && steps.analyze.outputs.risk_level != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+      run: |
+        FAIL_ON=$(echo "${{ inputs.fail_on_risk }}" | tr '[:lower:]' '[:upper:]')
+        RISK="${{ steps.analyze.outputs.risk_level }}"
+        rank() {
+          case "$1" in
+            HIGH) echo 3 ;;
+            MED|MEDIUM) echo 2 ;;
+            LOW) echo 1 ;;
+            *) echo 0 ;;
+          esac
+        }
+        RISK_R=$(rank "$RISK")
+        FAIL_R=$(rank "$FAIL_ON")
+
+        STATE=success
+        if [ "$FAIL_R" -gt 0 ] && [ "$RISK_R" -ge "$FAIL_R" ]; then
+          STATE=failure
+        fi
+
+        SHA="${{ github.event.pull_request.head.sha }}"
+        if [ -n "$SHA" ]; then
+          gh api -X POST "repos/${{ github.repository }}/statuses/$SHA" \
+            -f state="$STATE" \
+            -f context="plainplan" \
+            -f description="Risk level: ${RISK:-NONE}" >/dev/null \
+            && echo "Set 'plainplan' commit status: $STATE (risk: $RISK)" \
+            || echo "::warning::Could not set commit status (need 'statuses: write'?)"
+        fi
+
+        if [ "$STATE" = "failure" ]; then
+          echo "::error::PlainPlan risk gate failed — risk '$RISK' meets/exceeds threshold '$FAIL_ON'."
+          exit 1
+        fi

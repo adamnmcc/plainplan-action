@@ -17,6 +17,7 @@ jobs:
       contents: read
       pull-requests: write
       id-token: write        # free tier (public repos): proves repo is public via OIDC
+      statuses: write        # set the `plainplan` commit status (merge gate)
 
     steps:
       - name: Checkout
@@ -44,3 +45,6 @@ jobs:
           # Private repos or higher limits: uncomment and set a key.
           # api_key: ${{ secrets.PLAINPLAN_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Merge gate: fail + red `plainplan` status on HIGH-risk plans.
+          # Add `plainplan` to required status checks to block merges.
+          # fail_on_risk: HIGH

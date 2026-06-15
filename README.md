@@ -62,6 +62,39 @@ Generate `plan.json` first:
 - `oidc_audience` (optional): Audience for the requested OIDC token. Default: `plainplan`
 - `github_token` (optional): Token used to post PR comments. Default: `${{ github.token }}`
 - `post_comment` (optional): `true` or `false`. Default: `true`
+- `fail_on_risk` (optional): `none` | `LOW` | `MED` | `HIGH`. Threshold that fails the run and sets the `plainplan` commit status to failure. Default: `none` (never fails).
+
+## Outputs
+
+- `summary` — plain-English summary
+- `risk_level` — `HIGH` | `MED` | `LOW` | `NONE`
+- `pr_markdown` — full PR comment markdown
+
+## Merge gate (block risky plans)
+
+Set `fail_on_risk` and the action publishes a `plainplan` commit status
+(`success`/`failure`) on the PR head commit. Mark that status as a required
+check in branch protection to block merges on risky plans.
+
+```yaml
+jobs:
+  plan-review:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write       # free tier
+      pull-requests: write  # post comment
+      statuses: write       # set the `plainplan` commit status
+    steps:
+      - uses: actions/checkout@v5
+      - uses: adamnmcc/plainplan-action@v1
+        with:
+          plan_file: plan.json
+          fail_on_risk: HIGH   # fail + red status when a HIGH-risk change is detected
+```
+
+Then: repo **Settings → Branches → branch protection → Require status checks →
+add `plainplan`**. With `fail_on_risk: none` (default) the status is always
+`success`, so adding it is safe before you're ready to enforce.
 
 ## Query Parameters
 
